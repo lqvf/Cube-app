@@ -44,7 +44,6 @@
   .scrambled{color:var(--warn);}
   .label{color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px;}
 
-  /* cube net */
   .net{
     display:grid;
     grid-template-columns:repeat(12, 1fr);
@@ -115,9 +114,6 @@
   </div>
 
 <script>
-// ---------- QiYi QY-SC-S protocol ----------
-// Reverse-engineered protocol reference: Flying-Toast/qiyi_smartcube_protocol
-
 const SERVICE_UUIDS = [
   '5833ff01-9b8b-5191-6142-22a4536ef123',
   0xfff0
@@ -130,17 +126,14 @@ const MOVE_NAMES = {
   0x7:"U'", 0x8:"U", 0x9:"F'", 0xa:"F", 0xb:"B'", 0xc:"B"
 };
 
-// colors: 0 orange, 1 red, 2 yellow, 3 white, 4 green, 5 blue
 const COLOR_HEX = {0:'#ff8a3d',1:'#e8384f',2:'#ffd23d',3:'#f4f4f4',4:'#3ecf6a',5:'#3d8bff'};
 
 let cryptoKey = null;
 let device, server, char;
-let macBytesReversed = null;
 let lastFacelets = null;
 
 function log(...a){ console.log(...a); }
 
-// ---- CRC16 MODBUS ----
 function crc16modbus(bytes){
   let crc = 0xFFFF;
   for(let i=0;i<bytes.length;i++){
@@ -170,7 +163,6 @@ function padTo16(bytes){
   return out;
 }
 
-// ---- AES-128-ECB via WebCrypto AES-CBC block trick ----
 async function importKey(){
   cryptoKey = await crypto.subtle.importKey('raw', AES_KEY_BYTES, {name:'AES-CBC'}, false, ['encrypt','decrypt']);
 }
@@ -214,7 +206,6 @@ async function ecbDecrypt(bytes){
   return out;
 }
 
-// ---- message builders ----
 async function sendRaw(bytes){
   const encrypted = await ecbEncrypt(bytes);
   await char.writeValueWithoutResponse(encrypted);
@@ -236,7 +227,6 @@ async function sendAck(headerBytes5){
   await sendRaw(withChecksum);
 }
 
-// ---- facelet parsing ----
 function parseFacelets(stateBytes27){
   const facelets = new Array(54);
   for(let i=0;i<27;i++){
@@ -258,7 +248,6 @@ function isSolved(facelets){
   return centers.size === 6;
 }
 
-// ---- UI ----
 const netEl = document.getElementById('net');
 function buildNetLayout(){
   netEl.innerHTML='';
@@ -330,7 +319,6 @@ function setBattery(level){
   document.getElementById('battery').textContent = (level!=null) ? `${level}% battery` : '';
 }
 
-// ---- message handling ----
 async function handleNotification(event){
   const value = new Uint8Array(event.target.value.buffer);
   let decrypted;
@@ -343,7 +331,7 @@ async function handleNotification(event){
   if(decrypted[0] !== 0xfe) return;
   const opcode = decrypted[2];
 
-  if(opcode === 0x2){ // Cube Hello
+  if(opcode === 0x2){
     const state = decrypted.slice(7,34);
     const battery = decrypted[35];
     lastFacelets = parseFacelets(state);
@@ -353,7 +341,7 @@ async function handleNotification(event){
     await sendAck(decrypted.slice(2,7));
     setStatus('Connected', 'on');
   }
-  else if(opcode === 0x3){ // State Change
+  else if(opcode === 0x3){
     const state = decrypted.slice(7,34);
     const moveByte = decrypted[34];
     const battery = decrypted[35];
@@ -372,7 +360,7 @@ async function handleNotification(event){
     setBattery(battery);
     if(MOVE_NAMES[moveByte]) pushMove(MOVE_NAMES[moveByte]);
   }
-  else if(opcode === 0x4 || opcode === 0x5){ // Sync Confirmation / Current State
+  else if(opcode === 0x4 || opcode === 0x5){
     const state = decrypted.slice(7,34);
     lastFacelets = parseFacelets(state);
     renderFacelets(lastFacelets);
@@ -381,7 +369,6 @@ async function handleNotification(event){
   }
 }
 
-// ---- connect flow ----
 document.getElementById('connectBtn').onclick = async ()=>{
   if(!navigator.bluetooth){
     setStatus('Web Bluetooth not available in this browser', 'bad');
@@ -398,7 +385,12 @@ document.getElementById('connectBtn').onclick = async ()=>{
 
     let service = null;
     for(const uuid of SERVICE_UUIDS){
-      try{ service = await server.getPrimaryService(uuid); if(service) break; }catch(e){}
+      try{
+        const candidate = await server.getPrimaryService(uuid);
+        await candidate.getCharacteristic(CHAR_UUID);
+        service = candidate;
+        break;
+      }catch(e){ /* this service doesn't have fff6, try the next one */ }
     }
     if(!service){ setStatus('Cube service not found', 'bad'); return; }
 
@@ -426,4 +418,4 @@ document.getElementById('connectBtn').onclick = async ()=>{
 };
 </script>
 </body>
-  </html>
+</html>
